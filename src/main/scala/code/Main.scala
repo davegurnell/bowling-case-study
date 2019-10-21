@@ -4,77 +4,68 @@ object Main extends App {
   println("Hello world!")
 }
 
-case class Frame(first: Int, second: Option[Int], bonus: Option[Int] = None) {
-  def isStrike: Boolean =
-    first == 10
-
-  def isSpare: Boolean =
-    !isStrike && first + second.getOrElse(0) == 10
-
-  def score1: Int =
-    first
-
-  def score2: Int =
-    second.getOrElse(0)
-
-  def bonusScore: Int =
-    bonus.getOrElse(0)
-
-  def rolls: List[Int] =
-    List(first) ++ second.toList ++ bonus.toList
-}
-
 object Parser {
   val Triple = "(.)(.)(.)".r
   val Pair = "(.)(.)".r
   val Digit = "([0-9])".r
 
-  def parseLine(str: String): List[Frame] =
-    str.split(" +").toList.map(parseFrame)
+  def parseLine(str: String): List[Int] =
+    parseFrames(str.replaceAll(" ", "").toList.map(_.toString))
 
-  def parseFrame(str: String): Frame =
-    str match {
-      case Triple("X", "X", "X")           => Frame(10, Some(10), Some(10))
-      case Triple("X", "X", "-")           => Frame(10, Some(10), Some(0))
-      case Triple("X", "X", Digit(c))      => Frame(10, Some(10), Some(c.toInt))
-
-      case Triple("X", Digit(b), "/")      => Frame(10, Some(b.toInt), Some(10 - b.toInt))
-      case Triple("X", Digit(b), "-")      => Frame(10, Some(b.toInt), Some(0))
-      case Triple("X", Digit(b), Digit(c)) => Frame(10, Some(b.toInt), Some(c.toInt))
-
-      case Triple(Digit(a), "/", "-")      => Frame(a.toInt, Some(10 - a.toInt), Some(0))
-      case Triple(Digit(a), "/", Digit(c)) => Frame(a.toInt, Some(10 - a.toInt), Some(c.toInt))
-
-      case Pair("-", "/")                  => Frame(0, Some(10))
-      case Pair("-", "-")                  => Frame(0, Some(0))
-
-      case Pair(Digit(a), "/")             => Frame(a.toInt, Some(10 - a.toInt))
-      case Pair(Digit(a), "-")             => Frame(a.toInt, Some(0))
-      case Pair(Digit(a), Digit(b))        => Frame(a.toInt, Some(b.toInt))
-
-      case "X" => Frame(10, None)
-
-      case other => throw new Exception(s"Bad frame: $other")
+  def parseFrames(chars: List[String]): List[Int] =
+    chars match {
+      case Nil => Nil
+      case "X" :: t             => 10 :: parseFrames(t)
+      case "-" :: t             => 0  :: parseFrames(t)
+      case Digit(h) :: "/" :: t => h.toInt :: (10 - h.toInt) :: parseFrames(t)
+      case Digit(h) :: t        => h.toInt :: parseFrames(t)
     }
 }
 
 object Scorer {
-  def scoreLine(line: List[Frame], accum: Int = 0): Int =
+  def scoreLine(line: List[Int]): Int =
     line match {
-      case Nil => accum
-      case head :: Nil => accum + scoreLastFrame(head)
-      case head :: rest => scoreLine(rest, accum + scoreFrame(head, rest.flatMap(_.rolls)))
+      case Nil                                => 0
+      case a :: b :: c :: Nil if strike(a)    => a + b + c
+      case a :: b :: c :: Nil if spare(a, b)  => a + b + c
+      case a :: b :: c :: rest if strike(a)   => 10 + b + c + scoreLine(b :: c :: rest)
+      case a :: b :: c :: rest if spare(a, b) => 10 + c + scoreLine(c :: rest)
+      case a :: b :: rest                     => a + b + scoreLine(rest)
     }
 
-  def scoreFrame(curr: Frame, rest: List[Int]): Int =
-    if(curr.isStrike) {
-      10 + rest.take(2).sum
-    } else if(curr.isSpare) {
-      10 + rest.take(1).sum
+  private def strike(a: Int): Boolean =
+    a == 10
+
+  private def spare(a: Int, b: Int): Boolean =
+    a + b == 10
+}
+
+object Formatter {
+  def formatLine(line: List[Int]): String = {
+    def loop(line: List[Int]): List[String] =
+      line match {
+        case Nil                   => Nil
+        case 10 :: 10 :: 10 :: Nil => List("X", "X", "X")
+        case a  :: b  :: c  :: Nil => List(formatPair(a, b), formatRoll(c))
+        case 10 :: rest            => "X" +: loop(rest)
+        case a  :: b :: rest       => formatPair(a, b) +: loop(rest)
+        case line                  => throw new Exception(s"Invalid line: $line")
+      }
+
+    loop(line).mkString(" ")
+  }
+
+  private def formatPair(a: Int, b: Int): String =
+    if(a + b == 10) {
+      formatRoll(a) + "/"
     } else {
-      curr.score1 + curr.score2
+      formatRoll(a) + formatRoll(b)
     }
 
-  def scoreLastFrame(curr: Frame): Int =
-    curr.score1 + curr.score2 + curr.bonusScore
+  private def formatRoll(n: Int): String =
+    n match {
+      case 10 => "X"
+      case 0  => "-"
+      case d  => d.toString
+    }
 }
